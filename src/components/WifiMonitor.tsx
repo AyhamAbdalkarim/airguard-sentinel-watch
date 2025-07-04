@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Play, Pause, WifiHigh, WifiLow, WifiOff } from "lucide-react";
+import { apiService } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
 interface WifiMonitorProps {
   isMonitoring: boolean;
@@ -13,14 +15,18 @@ interface WifiMonitorProps {
 
 interface SignalData {
   time: string;
-  rssi: number;
+  packets: number;
   devices: number;
 }
 
 export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps) => {
   const [signalData, setSignalData] = useState<SignalData[]>([]);
   const [currentChannel, setCurrentChannel] = useState(6);
-  const [detectedNetworks, setDetectedNetworks] = useState([
+  const [packetsCount, setPacketsCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+
+  const [detectedNetworks] = useState([
     { ssid: "HomeNetwork_5G", channel: 6, rssi: -45, security: "WPA2", suspicious: false },
     { ssid: "UNKNOWN_AP", channel: 11, rssi: -72, security: "Open", suspicious: true },
     { ssid: "CoffeeShop_WiFi", channel: 1, rssi: -58, security: "WPA2", suspicious: false },
@@ -28,27 +34,57 @@ export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps)
   ]);
 
   useEffect(() => {
+    // Poll system status every 2 seconds when monitoring
     if (isMonitoring) {
-      const interval = setInterval(() => {
-        const now = new Date();
-        const newData: SignalData = {
-          time: now.toLocaleTimeString(),
-          rssi: -30 - Math.random() * 40,
-          devices: Math.floor(15 + Math.random() * 15)
-        };
-        
-        setSignalData(prev => [...prev.slice(-19), newData]);
+      const interval = setInterval(async () => {
+        try {
+          const status = await apiService.getStatus();
+          setPacketsCount(status.packets_captured);
+          
+          const now = new Date();
+          const newData: SignalData = {
+            time: now.toLocaleTimeString(),
+            packets: status.packets_captured,
+            devices: Math.floor(15 + Math.random() * 15) // Simulated device count
+          };
+          
+          setSignalData(prev => [...prev.slice(-19), newData]);
+        } catch (error) {
+          console.error('Failed to fetch status:', error);
+        }
       }, 2000);
 
       return () => clearInterval(interval);
     }
   }, [isMonitoring]);
 
-  const toggleMonitoring = () => {
-    setIsMonitoring(!isMonitoring);
-    if (!isMonitoring) {
-      // Reset data when starting monitoring
-      setSignalData([]);
+  const toggleMonitoring = async () => {
+    setIsLoading(true);
+    try {
+      if (isMonitoring) {
+        const response = await apiService.stopMonitoring();
+        setIsMonitoring(false);
+        toast({
+          title: "Monitoring Stopped",
+          description: response.status,
+        });
+      } else {
+        const response = await apiService.startMonitoring();
+        setIsMonitoring(true);
+        setSignalData([]); // Reset data when starting
+        toast({
+          title: "Monitoring Started",
+          description: response.status,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: `Failed to ${isMonitoring ? 'stop' : 'start'} monitoring. Make sure the Python backend is running.`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -69,9 +105,10 @@ export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps)
               onClick={toggleMonitoring}
               variant={isMonitoring ? "destructive" : "default"}
               className="flex items-center space-x-2"
+              disabled={isLoading}
             >
               {isMonitoring ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              <span>{isMonitoring ? 'Stop' : 'Start'} Monitoring</span>
+              <span>{isLoading ? 'Loading...' : (isMonitoring ? 'Stop' : 'Start')} Monitoring</span>
             </Button>
           </CardTitle>
           <CardDescription className="text-gray-400">
@@ -85,8 +122,8 @@ export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps)
               <div className="text-2xl font-bold text-purple-400">{currentChannel}</div>
             </div>
             <div>
-              <label className="text-sm text-gray-300">Scan Mode</label>
-              <div className="text-sm text-gray-400">Passive Monitor</div>
+              <label className="text-sm text-gray-300">Packets Captured</label>
+              <div className="text-2xl font-bold text-green-400">{packetsCount.toLocaleString()}</div>
             </div>
           </div>
           
@@ -110,9 +147,9 @@ export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps)
       {/* Real-time Signal Chart */}
       <Card className="bg-gray-800/50 border-gray-700">
         <CardHeader>
-          <CardTitle className="text-white">Signal Strength Monitor</CardTitle>
+          <CardTitle className="text-white">Real-time Activity Monitor</CardTitle>
           <CardDescription className="text-gray-400">
-            Real-time RSSI and device count tracking
+            Live packet capture and device tracking
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -130,11 +167,11 @@ export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps)
               />
               <Line 
                 type="monotone" 
-                dataKey="rssi" 
+                dataKey="packets" 
                 stroke="#8B5CF6" 
                 strokeWidth={2}
                 dot={false}
-                name="RSSI (dBm)"
+                name="Packets"
               />
               <Line 
                 type="monotone" 
@@ -142,7 +179,7 @@ export const WifiMonitor = ({ isMonitoring, setIsMonitoring }: WifiMonitorProps)
                 stroke="#10B981" 
                 strokeWidth={2}
                 dot={false}
-                name="Device Count"
+                name="Devices"
               />
             </LineChart>
           </ResponsiveContainer>

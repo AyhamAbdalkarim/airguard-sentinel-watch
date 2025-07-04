@@ -8,10 +8,44 @@ import { SystemStatus } from "@/components/SystemStatus";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, Wifi, AlertTriangle, Activity } from "lucide-react";
+import { apiService, SystemStatus as SystemStatusType } from "@/services/api";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [alertCount, setAlertCount] = useState(0);
+  const [systemStatus, setSystemStatus] = useState<SystemStatusType | null>(null);
+
+  // Poll system status every 3 seconds
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const status = await apiService.getStatus();
+        setSystemStatus(status);
+        setIsMonitoring(status.is_monitoring);
+      } catch (error) {
+        console.error('Failed to fetch system status:', error);
+        // Set default values if backend is not available
+        setSystemStatus({
+          is_monitoring: false,
+          packets_captured: 0,
+          threat_alerts: 0,
+          suspicious_ips: 0,
+          uptime: 0
+        });
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatUptime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -45,41 +79,49 @@ const Index = () => {
               <AlertTriangle className="h-4 w-4 text-red-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-400">{alertCount}</div>
-              <p className="text-xs text-gray-400">+2 from last hour</p>
+              <div className="text-2xl font-bold text-red-400">
+                {systemStatus?.threat_alerts || alertCount}
+              </div>
+              <p className="text-xs text-gray-400">Real-time detection</p>
             </CardContent>
           </Card>
           
           <Card className="bg-gray-800/50 border-gray-700">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-300">Devices Tracked</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-300">Packets Captured</CardTitle>
               <Wifi className="h-4 w-4 text-blue-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-400">23</div>
-              <p className="text-xs text-gray-400">+5 new devices</p>
+              <div className="text-2xl font-bold text-blue-400">
+                {systemStatus?.packets_captured.toLocaleString() || 0}
+              </div>
+              <p className="text-xs text-gray-400">Live monitoring</p>
             </CardContent>
           </Card>
           
           <Card className="bg-gray-800/50 border-gray-700">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-300">Signal Strength</CardTitle>
-              <Activity className="h-4 w-4 text-green-400" />
+              <CardTitle className="text-sm font-medium text-gray-300">Suspicious IPs</CardTitle>
+              <Activity className="h-4 w-4 text-orange-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">-45 dBm</div>
-              <p className="text-xs text-gray-400">Average RSSI</p>
+              <div className="text-2xl font-bold text-orange-400">
+                {systemStatus?.suspicious_ips || 0}
+              </div>
+              <p className="text-xs text-gray-400">Flagged addresses</p>
             </CardContent>
           </Card>
           
           <Card className="bg-gray-800/50 border-gray-700">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-300">Uptime</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-300">System Uptime</CardTitle>
               <Shield className="h-4 w-4 text-purple-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-purple-400">4h 23m</div>
-              <p className="text-xs text-gray-400">System online</p>
+              <div className="text-2xl font-bold text-purple-400">
+                {systemStatus ? formatUptime(systemStatus.uptime) : '0h 0m'}
+              </div>
+              <p className="text-xs text-gray-400">Backend online</p>
             </CardContent>
           </Card>
         </div>
